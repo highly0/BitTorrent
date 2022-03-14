@@ -1,0 +1,71 @@
+#! /usr/bin/env python3
+import argparse
+import asyncio
+import signal
+import math
+from collections import namedtuple
+
+from client import Client
+from torrent import Torrent
+from tracker import Tracker
+from Piecetracker import Piecetracker
+
+REQUEST_SIZE = 2**14
+File = namedtuple('File', ['file_length', 'file_pieces', 'file_idx'])
+def main():
+    # parsing the command line argument
+    parser = argparse.ArgumentParser(description='initiates bittorrent for a torrent file')
+    parser.add_argument('torrent', help='the .torrent to download')
+    args = parser.parse_args()   
+
+    #Process args.torrent in Torrent, then pass this client to instantiate the client's torrent file
+    torrent = Torrent(args.torrent)
+    tracker = Tracker(torrent)
+    tracker_response = tracker.connect(True)
+    
+    
+#    print('total pieces: {}'.format(len(torrent.pieces)))
+    print('total size: {}'.format(torrent.total_size))
+    print('file has: {} pieces'.format(len(torrent.pieces)))
+    pieceTracker = Piecetracker(torrent)
+
+    #print(torrent.files)
+   
+    #creating a loop
+    loop = asyncio.get_event_loop()
+    # download from each client concurrently until done
+    loop.run_until_complete(download(torrent, tracker, tracker_response, pieceTracker))
+    loop.close() 
+    
+    
+  
+  
+
+File = namedtuple('File', ['file_length', 'file_pieces', 'pieces_written', 'blocks_written'])
+    
+# creating a CoRoutine
+async def download(torrent, tracker, tracker_response, pieceTracker):
+    #unique id's to identify differnet peers
+    peer_id = 0
+    peer_addr = tracker_response.peers
+
+
+    peers = []
+    if peer_addr:
+        for ip, host in peer_addr:
+            peers.append(Client(torrent, pieceTracker, tracker.peer_id, peer_id,ip, host))
+            peer_id = peer_id + 1
+    
+        # downloading from each peer concurrently until finished
+        await(
+            asyncio.gather(*[
+                # our coroutine
+                peer.start() for peer in peers
+            ])
+        )
+    else:
+        print('no peers were provided')
+        exit(-1)
+
+if __name__ == '__main__':
+    main()
